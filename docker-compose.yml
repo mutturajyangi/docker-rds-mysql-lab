@@ -1,0 +1,73 @@
+name: rds-lab
+
+services:
+  # "RDS for MySQL": private, no published port, data on a named volume
+  mysql:
+    image: mysql:8.4
+    container_name: mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set it in .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-inventory}
+      MYSQL_USER: ${MYSQL_USER:-app}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set it in .env}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # Run once, on the first start with an empty volume (like restoring a snapshot into a new RDS instance)
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+    networks:
+      - backend-net
+
+  # "RDS Query Editor": web console for the database
+  phpmyadmin:
+    image: phpmyadmin:5.2
+    container_name: phpmyadmin
+    restart: unless-stopped
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+    ports:
+      - "${PHPMYADMIN_PORT:-8081}:80"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - frontend-net
+      - backend-net
+
+  # Application tier: small CRUD API that talks to the database
+  api:
+    build: ./api
+    image: rds-lab-api:latest
+    container_name: api
+    restart: unless-stopped
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${MYSQL_DATABASE:-inventory}
+      DB_USER: ${MYSQL_USER:-app}
+      DB_PASSWORD: ${MYSQL_PASSWORD:?set it in .env}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - frontend-net
+      - backend-net
+
+networks:
+  # Public subnet: containers here may publish ports to the host
+  frontend-net:
+  # Private subnet: no route to/from the host or the internet
+  backend-net:
+    internal: true
+
+volumes:
+  mysql-data:

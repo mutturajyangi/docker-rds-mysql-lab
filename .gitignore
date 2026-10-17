@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+backups/*.sql
+backups/*.sql.gz
+.vscode/
+.idea/
+.DS_Store
+graphify-out/
